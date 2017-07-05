@@ -5,15 +5,16 @@ SRC_MASTER_TCP = mbtcp_func.c mbtcp_mstr.c
 FLAG = -l pthread
 
 all: mbser_slv mbser_mstr mbtcp_mstr mbtcp_slv
-
+#CC = gcc
+CC = aarch64-linux-gnu-gcc
 mbser_mstr: ${SRC_MASTER_SER}
-	gcc -Wall -o $@ ${SRC_MASTER_SER}
+	$(CC) -Wall -o $@ ${SRC_MASTER_SER}
 mbser_slv: ${SRC_SLAVE_SER}
-	gcc -Wall -o $@ ${SRC_SLAVE_SER}
+	$(CC) -Wall -o $@ ${SRC_SLAVE_SER}
 mbtcp_mstr: $(SRC_MASTER_TCP)
-	gcc -Wall -o $@ ${SRC_MASTER_TCP} ${FLAG}
+	$(CC) -Wall -o $@ ${SRC_MASTER_TCP} ${FLAG}
 mbtcp_slv: ${SRC_SLAVE_TCP}
-	gcc -Wall -o $@ ${SRC_SLAVE_TCP} ${FLAG}
+	$(CC) -Wall -o $@ ${SRC_SLAVE_TCP} ${FLAG}
 clean:
 	rm -f mbser_slv mbser_mstr mbtcp_mstr mbtcp_slv
 	 
