@@ -135,6 +135,7 @@ int tcp_resp_parser(unsigned char *rx_buf, struct tcp_frm_para *tmfpara, int rle
 	unsigned short qlen;
 	unsigned short raddr;
 	unsigned short rrlen;
+	int temp;
 	char *s[EXCPMSGTOTAL] = {"<Modbus TCP Master> Read Coil Status (FC=01) exception !!",
 							 "<Modbus TCP Master> Read Input Status (FC=02) exception !!",
 							 "<Modbus TCP Master> Read Holding Registers (FC=03) exception !!",
@@ -174,11 +175,12 @@ int tcp_resp_parser(unsigned char *rx_buf, struct tcp_frm_para *tmfpara, int rle
 			printf("<Modbus TCP Master> recv respond byte wrong !!\n");
 			return -1;
 		}
-		printf("<Modbus TCP Master> Data : ");
+//		printf("<Modbus TCP Master> Data : ");
 		for(i = 9; i < rlen; i+=2){
-			printf(" %x%x |", *(rx_buf+i), *(rx_buf+i+1));
+		//	printf(" %x%x |", *(rx_buf+i), *(rx_buf+i+1));
+			temp = (*(rx_buf+i) << 8) + *(rx_buf+i+1); 
 		}
-		printf("\n");
+//		printf("\n");
 	}else if(!(rfc ^ FORCESIGLEREGS)){								// fc = 0x05, get write on/off status
 		memcpy(&tmp16, rx_buf+8, sizeof(tmp16));
 		raddr = ntohs(tmp16);
@@ -208,7 +210,7 @@ int tcp_resp_parser(unsigned char *rx_buf, struct tcp_frm_para *tmfpara, int rle
 		return -1;
 	}
 	
-	return 0;
+	return temp;
 }
 /*
  * build Modbus TCP query

@@ -19,15 +19,17 @@ int _set_para(struct tcp_frm_para *tmfpara)
 	int tmp;
 	unsigned short straddr;
 
-	printf("Modbus TCP Master mode !\n");
+//	printf("Modbus TCP Master mode !\n");
 	tmfpara->transID = INITTCPTRANSID;
 	tmfpara->potoID = (unsigned char)TCPMBUSPROTOCOL;
 	tmfpara->msglen = (unsigned char)TCPQUERYMSGLEN;
-	printf("Enter Unit ID : ");
-	scanf("%d", &tmp);
-	memcpy(&tmfpara->unitID, &tmp, sizeof(tmfpara->unitID));	
-	printf("Enter Function code : ");
-	scanf("%d", &cmd);
+//	printf("Enter Unit ID : ");
+//	scanf("%d", &tmp);
+//	memcpy(&tmfpara->unitID, &tmp, sizeof(tmfpara->unitID));	
+	tmfpara->unitID = 1;	
+//	printf("Enter Function code : ");
+//	scanf("%d", &cmd);
+	cmd = 3;
 	switch(cmd){
 		case 1:
 			tmfpara->fc = READCOILSTATUS;
@@ -57,9 +59,9 @@ int _set_para(struct tcp_frm_para *tmfpara)
 			printf("6        Preset Single Register\n");
 			return -1;
 	}
-	printf("Setting Start addr : ");
-	scanf("%hu", &straddr);
-	tmfpara->straddr = straddr - 1;
+//	printf("Setting Start addr : ");
+//	scanf("%hu", &straddr);
+	tmfpara->straddr = 0;
 	if(cmd == 5){
 		printf("Setting register write status (1 : on/0 : off) : ");
 		scanf("%d", &tmp);
@@ -75,8 +77,9 @@ int _set_para(struct tcp_frm_para *tmfpara)
 		printf("Setting register action : ");
 		scanf("%hu", &tmfpara->act);
 	}else if(cmd == 3 || cmd == 4){
-		printf("Setting register shift length : ");
-		scanf("%d", &tmp);
+//		printf("Setting register shift length : ");
+//		scanf("%d", &tmp);
+		tmp = 1;
 		if(tmp > 110 || tmp < 0){
 			printf("Please DO NOT exceed 110 ! ");
 			printf("Come on, dude. That's just a testing progam ...\n");
@@ -116,7 +119,7 @@ int _create_sk_cli(char *addr, char *port)
 		if(skfd == -1){
 			continue;
 		}
-		printf("<Modbus Tcp Master> fd = %d\n", skfd);
+//		printf("<Modbus Tcp Master> fd = %d\n", skfd);
 
 		ret = connect(skfd, p->ai_addr, p->ai_addrlen);
 		if(ret == -1){
@@ -188,7 +191,7 @@ int main(int argc, char **argv)
 		
 		retval = select(skfd + 1, &rfds, &wfds, 0, &tv);
 		if(retval <= 0){
-			printf("<Modbus Tcp Master> select nothing ...\n");
+//			printf("<Modbus Tcp Master> select nothing ...\n");
 			sleep(3);
 			continue;
 		}
@@ -197,7 +200,7 @@ int main(int argc, char **argv)
 			tcp_func.build_qry((struct tcp_frm *)tx_buf, &tmfpara);
             wlen = send(skfd, &tx_buf, TCPSENDQUERYLEN, MSG_NOSIGNAL);
 			if(wlen != TCPSENDQUERYLEN){
-				printf("<Modbus TCP Master> send incomplete !!\n");
+//				printf("<Modbus TCP Master> send incomplete !!\n");
 				print_data(tx_buf, wlen, SENDINCOMPLT);
 				break;
 			}
@@ -209,7 +212,7 @@ int main(int argc, char **argv)
 		if(FD_ISSET(skfd, &rfds) && lock){
 			rlen = recv(skfd, rx_buf, FRMLEN, 0);
 			if(rlen < 1){
-				printf("<Modbus TCP Master> fuckin recv empty !!\n");
+//				printf("<Modbus TCP Master> fuckin recv empty !!\n");
 				continue;
 			}
 
@@ -227,11 +230,13 @@ int main(int argc, char **argv)
 			debug_print_data(rx_buf, rlen, RECVRESP);
 			poll_slvID(tmfpara.unitID);
 			lock = 0;
+			break;
 		}
 		sleep(1);
 	}while(1);
 	
 	close(skfd);
 	
+	printf("%d", ret);
 	return 0;
 }	
