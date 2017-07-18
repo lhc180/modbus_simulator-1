@@ -156,7 +156,15 @@ struct tcp_frm_excp {
 	unsigned char fc;
 	unsigned char ec;
 }__attribute__((packed));
-	
+
+struct send_info{
+	char *ip;
+	char *port;
+	int len;
+	int skfd;
+	char sbuf[32];
+}__attribute__((packed));
+
 /* modbus TCP respond fc = 01/02/03/04 frame */
 struct tcp_frm_rsp {
 	unsigned short transID;

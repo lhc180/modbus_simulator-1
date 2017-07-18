@@ -10,46 +10,15 @@
 #include <sys/select.h>
 
 #include "mbus.h"
-
+#define pr() //printf("%s %s %d\n", __FILE__, __func__, __LINE__)
 extern struct mbus_tcp_func tcp_func;
 
-int _set_para(struct tcp_frm_para *tmfpara)
+int _check_para(struct send_info *info)
 {
-	int cmd;
-	int tmp;
-	unsigned short straddr;
-
-//	printf("Modbus TCP Master mode !\n");
-	tmfpara->transID = INITTCPTRANSID;
-	tmfpara->potoID = (unsigned char)TCPMBUSPROTOCOL;
-	tmfpara->msglen = (unsigned char)TCPQUERYMSGLEN;
-//	printf("Enter Unit ID : ");
-//	scanf("%d", &tmp);
-//	memcpy(&tmfpara->unitID, &tmp, sizeof(tmfpara->unitID));	
-	tmfpara->unitID = 1;	
-//	printf("Enter Function code : ");
-//	scanf("%d", &cmd);
-	cmd = 3;
-	switch(cmd){
-		case 1:
-			tmfpara->fc = READCOILSTATUS;
-			break;
-		case 2:
-			tmfpara->fc = READINPUTSTATUS;
-			break;
-		case 3:
-			tmfpara->fc = READHOLDINGREGS;
-			break;
-		case 4:
-			tmfpara->fc = READINPUTREGS;
-			break;
-		case 5:
-			tmfpara->fc = FORCESIGLEREGS;
-			break;
-		case 6:
-			tmfpara->fc = PRESETEXCPSTATUS;
-			break;
-		default:
+	if (info->sbuf[6] == (char)0xf1){
+		return 0;
+	}	
+	if (info->sbuf[7] > 6 && info->sbuf[7] < 1){
 			printf("Function code :\n");
 			printf("1        Read Coil Status\n");
 			printf("2        Read Input Status\n");
@@ -59,39 +28,13 @@ int _set_para(struct tcp_frm_para *tmfpara)
 			printf("6        Preset Single Register\n");
 			return -1;
 	}
-//	printf("Setting Start addr : ");
-//	scanf("%hu", &straddr);
-	tmfpara->straddr = 0;
-	if(cmd == 5){
-		printf("Setting register write status (1 : on/0 : off) : ");
-		scanf("%d", &tmp);
-		if(tmp){
-			tmfpara->act = 0xff<<8;
-		}else if(!tmp){
-			tmfpara->act = 0;
-		}else{
-			printf("Setting register write status Fail (1 : on/0 : off)\n");
-			exit(0);
-		}
-	}else if(cmd == 6){
-		printf("Setting register action : ");
-		scanf("%hu", &tmfpara->act);
-	}else if(cmd == 3 || cmd == 4){
-//		printf("Setting register shift length : ");
-//		scanf("%d", &tmp);
-		tmp = 1;
-		if(tmp > 110 || tmp < 0){
-			printf("Please DO NOT exceed 110 ! ");
-			printf("Come on, dude. That's just a testing progam ...\n");
-			exit(0);
-		}else{
-			tmfpara->len = (unsigned short)tmp;
-		}
-	}else{
-		printf("Setting shift length : ");
-		scanf("%hu", &tmfpara->len);
-	}
 	
+	if(info->sbuf[7] == 5){
+		if(info->sbuf[10] && info->sbuf[11]){
+			info->sbuf[10] = 0xff;
+			info->sbuf[11] = 0x0;
+		}
+	}	
 	return 0;
 }
 
@@ -111,7 +54,7 @@ int _create_sk_cli(char *addr, char *port)
 	ret = getaddrinfo(addr, port, &hints, &res);
 	if(ret != 0){
 		printf("<Modbus Tcp Master> getaddrinfo : %s\n", gai_strerror(ret));
-		exit(0);
+		return -1;
 	}
 
 	for(p = res; p != NULL; p = p->ai_next){
@@ -119,7 +62,6 @@ int _create_sk_cli(char *addr, char *port)
 		if(skfd == -1){
 			continue;
 		}
-//		printf("<Modbus Tcp Master> fd = %d\n", skfd);
 
 		ret = connect(skfd, p->ai_addr, p->ai_addrlen);
 		if(ret == -1){
@@ -130,8 +72,10 @@ int _create_sk_cli(char *addr, char *port)
 	}
 
 	if(p == NULL){
+		if (skfd > 0)
+			close(skfd);
 		printf("<Modbus Tcp Master> Fail to connect\n");
- 		exit(0);
+ 		return -1;
 	}
 
 	freeaddrinfo(res);
@@ -139,104 +83,202 @@ int _create_sk_cli(char *addr, char *port)
 	return skfd;
 }
 
-int main(int argc, char **argv)
+
+struct send_info *create_connect(char *ip, char *port)
 {
-	int skfd;
+	struct send_info *info = malloc(sizeof(struct send_info));
+	if (!info){
+		return NULL;
+	}
+	info->ip = ip;
+	info->port = port;
+	info->skfd = _create_sk_cli(ip, port);
+	if(info->skfd < 0){
+		free(info);
+		return NULL;
+	}
+	return info;
+}
+
+void del_connect(struct send_info *info)
+{
+	close(info->skfd);
+	free(info);
+}
+
+void set_data(struct send_info *info, char *buf, int len)
+{
+	info->sbuf[0] = INITTCPTRANSID >> 8;
+	info->sbuf[1] = INITTCPTRANSID & 0xFF;
+	info->sbuf[2] = TCPMBUSPROTOCOL >> 8;;
+	info->sbuf[3] = TCPMBUSPROTOCOL & 0XFF;;
+	info->sbuf[4] = (len >> 8) & 0xFF;
+	info->sbuf[5] = len & 0xFF;
+	memcpy(&(info->sbuf[6]), buf, len);
+	info->len = len + 6;
+}
+
+int send_date(struct send_info *info, char *rbuf, int len)
+{
 	int ret;
-	int retval;
 	int wlen;
 	int rlen;
-	int lock;
-	char *port;
-	char *addr;
-	unsigned char rx_buf[FRMLEN];
-	unsigned char tx_buf[FRMLEN];	
-	fd_set rfds;
-	fd_set wfds;
-	struct timeval tv;
-	struct tcp_frm_para tmfpara;
-	
-	if(argc < 3){
-		printf("Usage : ./mbtcp_mstr <IP Address> <PORT>\n");
-		exit(0);
-	}	
-	addr = argv[1];
-	port = argv[2];
-	
-	skfd = _create_sk_cli(addr, port);
-	if(skfd < 0){
-		close(skfd);
-		printf("<Modbus Tcp Master> Fail to connect\n");
-		exit(0);
-	}
+	struct tcp_frm_para pa;
 
-	ret = _set_para(&tmfpara);
+	ret = _check_para(info);
 	if(ret == -1){
-		printf("<Modbus TCP Master> Set parameter fail\n");
-		exit(0);
+		return ret;
+	}
+
+         wlen = send(info->skfd, info->sbuf, info->len, MSG_NOSIGNAL);
+	 if(wlen != info->len){
+		return -1;
+	 }
+
+	 if (info->sbuf[6] == (char)0xF1){
+		 return 0;
+	 }	
+
+	 rlen = recv(info->skfd, rbuf, len, 0);
+	 if(rlen < 1){
+		return -1;
+	 }
+
+	pa.transID = (info->sbuf[0] << 8) + info->sbuf[1];  
+	pa.potoID = (info->sbuf[2] << 8) + info->sbuf[3];  
+	pa.msglen = (info->sbuf[4] << 8) + info->sbuf[5];  
+	pa.unitID = info->sbuf[6];
+	pa.fc = info->sbuf[7];
+	pa.straddr = (info->sbuf[8] << 8) + info->sbuf[9];
+	pa.act = (info->sbuf[10] << 8) + info->sbuf[11];
+	pa.len = (info->sbuf[10] << 8) + info->sbuf[11];
+
+	 ret = tcp_func.chk_dest((struct tcp_frm *)rbuf, &pa);
+	 if(ret == -1){
+		return -1;
+	 }
+	
+	 ret = tcp_func.resp_parser((unsigned char *)rbuf, &pa, rlen);
+	 if(ret == -1){
+		return -1;
+	 }
+	
+	return ret == -1 ? -1 : rlen;
+}	
+
+
+
+int main_2(int argc, char **argv)
+{
+	char rbuf[32];
+	struct send_info *info;
+	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
+	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
+	int tem;
+	int len;
+	
+	if ((info = create_connect(argv[1], argv[2])) == NULL){
+		printf("Can't create a connect to %s:%s\n", argv[1], argv[2]);
+		return 0;
 	}
 	
-	lock = 0;
-	
-	do{	
-		FD_ZERO(&rfds);
-		FD_ZERO(&wfds);
-		if(lock){
-			FD_SET(skfd, &rfds);
-		}
-		FD_SET(skfd, &wfds);
-		
-		tv.tv_sec = 5;
-		tv.tv_usec = 0;
-		
-		retval = select(skfd + 1, &rfds, &wfds, 0, &tv);
-		if(retval <= 0){
-//			printf("<Modbus Tcp Master> select nothing ...\n");
-			sleep(3);
-			continue;
-		}
-	
-		if(FD_ISSET(skfd, &wfds) && !lock){	
-			tcp_func.build_qry((struct tcp_frm *)tx_buf, &tmfpara);
-            wlen = send(skfd, &tx_buf, TCPSENDQUERYLEN, MSG_NOSIGNAL);
-			if(wlen != TCPSENDQUERYLEN){
-//				printf("<Modbus TCP Master> send incomplete !!\n");
-				print_data(tx_buf, wlen, SENDINCOMPLT);
-				break;
-			}
-			debug_print_data(tx_buf, wlen, SENDQRY);
-			tmfpara.transID++; 
-			lock = 1;
-		}
 
-		if(FD_ISSET(skfd, &rfds) && lock){
-			rlen = recv(skfd, rx_buf, FRMLEN, 0);
-			if(rlen < 1){
-//				printf("<Modbus TCP Master> fuckin recv empty !!\n");
-				continue;
-			}
+	set_data(info, sbuf, sizeof(sbuf));
 
-			ret = tcp_func.chk_dest((struct tcp_frm *)rx_buf, &tmfpara);
-			if(ret == -1){
-				memset(rx_buf, 0, FRMLEN);
-				continue;
-			}
-			ret = tcp_func.resp_parser(rx_buf, &tmfpara, rlen);
-			if(ret == -1){
-				print_data(rx_buf, TCPRESPEXCPFRMLEN, RECVEXCP);
-				lock = 0;
-				continue;
-			}
-			debug_print_data(rx_buf, rlen, RECVRESP);
-			poll_slvID(tmfpara.unitID);
-			lock = 0;
-			break;
-		}
-		sleep(1);
-	}while(1);
-	
-	close(skfd);
-	
-	printf("%d", ret);
+	len = send_date(info, rbuf, 32);
+       	if (len < 0){
+		printf("send error\n");
+		return 0;
+	}
+
+	tem = (rbuf[9] << 8) + rbuf[10];	
+	obuf[2] = (tem % 1000) / 100;
+	obuf[3] = ((tem % 100) / 10) | 0x80;
+	obuf[4] = (tem % 10);
+
+	set_data(info, obuf, sizeof(obuf));
+	len = send_date(info, rbuf, 32);
+       	if (len < 0){
+		printf("send error\n");
+		return 0;
+	}
+	del_connect(info);
+	printf("%d", tem);
 	return 0;
-}	
+	
+}
+
+int main_1(int argc, char **argv)
+{
+	char rbuf[32];
+	struct send_info *info;
+	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
+	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
+	char dbuf[] = {0x01, 0x06, 0x00, 0x06,0x00, 0x00};
+	char ebuf[] = {0x01, 0x06, 0x00, 0x07,0x00, 0x00};
+	int tem;
+	int len;
+	int led = 0;
+	
+	if ((info = create_connect(argv[1], argv[2])) == NULL){
+		printf("Can't create a connect to %s:%s\n", argv[1], argv[2]);
+		return 0;
+	}
+	
+
+	while(1){
+		set_data(info, sbuf, sizeof(sbuf));
+	
+		len = send_date(info, rbuf, 32);
+	       	if (len < 0){
+			printf("send error\n");
+			return 0;
+		}
+	
+		tem = (rbuf[9] << 8) + rbuf[10];	
+		obuf[2] = (tem % 1000) / 100;
+		obuf[3] = ((tem % 100) / 10) | 0x80;
+		obuf[4] = (tem % 10);
+	
+		set_data(info, obuf, sizeof(obuf));
+		len = send_date(info, rbuf, 32);
+	       	if (len < 0){
+			printf("send error\n");
+			return 0;
+		}
+
+		if (tem > 315 && dbuf[5]  == 0){
+			dbuf[5] = 0x01;
+			led = 1;
+		}
+		
+		if (tem < 310 && dbuf[5]  == 1){
+			dbuf[5] = 0x00;
+			led = 1;
+		}
+
+		if (led){
+			sleep(1);
+			set_data(info, dbuf, sizeof(dbuf));
+			len = send_date(info, rbuf, 32);
+	       		if (len < 0){
+				printf("send error\n");
+				return 0;
+			}
+			led = 0;
+		}
+
+
+		sleep(1);
+	}
+	return 0;
+	
+}
+
+
+
+int main(int argc, char **argv)
+{
+	main_2(argc, argv);
+	return 0;
+}

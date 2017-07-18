@@ -204,7 +204,7 @@ int tcp_resp_parser(unsigned char *rx_buf, struct tcp_frm_para *tmfpara, int rle
 			printf("Query action : %x | Respond action : %x\n", qact, ract);
 			return -1;
 		}
-		printf("<Modbus TCP Master> addr : %x Action code : %x\n", raddr, ract);
+//		printf("<Modbus TCP Master> addr : %x Action code : %x\n", raddr, ract);
 	}else{															// fc = Unknown 
 		printf("<Modbus TCP Master> Unknown Function code %x !!\n", rfc);
 		return -1;
