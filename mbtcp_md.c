@@ -8,7 +8,9 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/select.h>
-
+#include <netinet/in.h>
+#include <sys/types.h> 
+#include <arpa/inet.h>
 #include "mbus.h"
 #define pr() //printf("%s %s %d\n", __FILE__, __func__, __LINE__)
 extern struct mbus_tcp_func tcp_func;
@@ -168,9 +170,8 @@ int send_date(struct send_info *info, char *rbuf, int len)
 
 
 
-int main_2(int argc, char **argv)
+int main_2(int argc, char **argv, char *rbuf)
 {
-	char rbuf[32];
 	struct send_info *info;
 	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
 	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
@@ -203,8 +204,7 @@ int main_2(int argc, char **argv)
 		return 0;
 	}
 	del_connect(info);
-	printf("%d", tem);
-	return 0;
+	return tem;
 	
 }
 
@@ -278,6 +278,43 @@ int main_1(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
-	main_2(argc, argv);
+	int sock;
+	int cli;
+	struct sockaddr_in self;
+	struct sockaddr cli_addr;
+ 	char buf[2][32];
+	if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0){
+		printf("Can't create a socket\n");
+		return 0;
+	}
+
+	bzero(&self, sizeof(self));
+	self.sin_family = AF_INET;
+	self.sin_port = htons(502); 
+	self.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	if (bind(sock, (struct sockaddr*)&self, sizeof(self)) != 0 ){
+		printf("Can't bind \n");
+		close(sock);
+		return 0;
+	}
+
+	if (listen(sock, 5) < 0){
+		printf("listen failed\n");
+		close(sock);
+		return 0;
+	}
+int len;
+	while(1){
+		cli = accept(sock, &cli_addr, NULL);
+		if (cli < 0)
+			break;
+		len = recv(cli, buf[0], 32, 0);
+		main_2(argc, argv, buf[1]);
+		memcpy(&buf[1][6], &buf[0][6], 6);
+		send(cli, buf[1], len, 0);
+		close(cli);
+	}
+	close(sock);
 	return 0;
 }
