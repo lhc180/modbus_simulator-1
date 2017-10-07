@@ -12,7 +12,14 @@
 #include <sys/types.h> 
 #include <arpa/inet.h>
 #include "mbus.h"
-#define pr() //printf("%s %s %d\n", __FILE__, __func__, __LINE__)
+#include <errno.h>
+#include <signal.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <limits.h>
+#define pr() printf("%s %s %d\n", __FILE__, __func__, __LINE__)
 extern struct mbus_tcp_func tcp_func;
 
 int _check_para(struct send_info *info)
@@ -175,6 +182,7 @@ int main_2(int argc, char **argv, char *rbuf)
 	struct send_info *info;
 	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
 	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
+	char buf[32];
 	int tem;
 	int len;
 	
@@ -191,99 +199,144 @@ int main_2(int argc, char **argv, char *rbuf)
 		printf("send error\n");
 		return 0;
 	}
-
+int i;
+for(i = 0 ; i < len; i++){
+	printf("%d ", rbuf[i]);
+		
+}
+printf("\n");
 	tem = (rbuf[9] << 8) + rbuf[10];	
 	obuf[2] = (tem % 1000) / 100;
 	obuf[3] = ((tem % 100) / 10) | 0x80;
 	obuf[4] = (tem % 10);
 
 	set_data(info, obuf, sizeof(obuf));
-	len = send_date(info, rbuf, 32);
+	len = send_date(info, buf, 32);
        	if (len < 0){
 		printf("send error\n");
 		return 0;
 	}
+	printf("%d\n", tem);
 	del_connect(info);
 	return tem;
 	
 }
 
-int main_1(int argc, char **argv)
+#define LOCKFILE "/var/run/mbtd.pid"
+#define LOCKMODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+
+static int already_running()
 {
-	char rbuf[32];
-	struct send_info *info;
-	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
-	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
-	char dbuf[] = {0x01, 0x06, 0x00, 0x06,0x00, 0x00};
-	int tem;
-	int len;
-	int led = 0;
-	
-	if ((info = create_connect(argv[1], argv[2])) == NULL){
-		printf("Can't create a connect to %s:%s\n", argv[1], argv[2]);
-		return 0;
+	int fd;
+	char buf[16];
+	struct flock flock;	
+
+	fd = open (LOCKFILE, O_RDWR | O_CREAT, LOCKMODE);
+	if (fd < 0){
+		printf("Can't open %s: %s\n", LOCKFILE, strerror(errno));
+		return -1;
 	}
 	
+	flock.l_type = F_WRLCK;
+	flock.l_start = 0;
+	flock.l_whence = SEEK_SET;
+	flock.l_len = 0;
 
-	while(1){
-		set_data(info, sbuf, sizeof(sbuf));
-	
-		len = send_date(info, rbuf, 32);
-	       	if (len < 0){
-			printf("send error\n");
-			return 0;
+	if (fcntl(fd, F_SETLK, &flock) < 0){
+		if (errno == EACCES || errno == EAGAIN){
+			close(fd);
+			printf("mbtd has been running\n");
+			return 1;
 		}
-	
-		tem = (rbuf[9] << 8) + rbuf[10];	
-		obuf[2] = (tem % 1000) / 100;
-		obuf[3] = ((tem % 100) / 10) | 0x80;
-		obuf[4] = (tem % 10);
-	
-		set_data(info, obuf, sizeof(obuf));
-		len = send_date(info, rbuf, 32);
-	       	if (len < 0){
-			printf("send error\n");
-			return 0;
-		}
-
-		if (tem > 315 && dbuf[5]  == 0){
-			dbuf[5] = 0x01;
-			led = 1;
-		}
-		
-		if (tem < 310 && dbuf[5]  == 1){
-			dbuf[5] = 0x00;
-			led = 1;
-		}
-
-		if (led){
-			sleep(1);
-			set_data(info, dbuf, sizeof(dbuf));
-			len = send_date(info, rbuf, 32);
-	       		if (len < 0){
-				printf("send error\n");
-				return 0;
-			}
-			led = 0;
-		}
-
-
-		sleep(1);
+		printf("Can't open %s: %s\n", LOCKFILE, strerror(errno));
+		return -1;
 	}
+	
+	ftruncate(fd, 0);
+	sprintf(buf, "%ld", (long)getpid());
+	write(fd, buf, strlen(buf));
 	return 0;
-	
 }
 
+int prepare_for_daemon()
+{
+	int fd0, fd1, fd2;
+	pid_t pid;
+	int i;
+	struct rlimit rl;
+	struct sigaction sa;
+	umask(0);
 
+	if (getrlimit(RLIMIT_NOFILE, &rl) < 0){
+		perror("Can't get file limit\n");
+		return -1;
+	}
+	
+	if ((pid = fork()) < 0){
+		perror("Can't fork\n");
+		return -1;
+	}
+	else if (pid != 0){
+		exit(0);
+	}
+
+	setsid();
+
+	sa.sa_handler = SIG_IGN;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	
+	if (sigaction(SIGHUP, &sa, NULL) < 0){
+		perror("Can't ignore SIGHUP\n");
+		return -1;
+	}
+
+	if ((pid = fork()) < 0){
+		perror("Can't fork\n");
+		return -1;
+	}
+	else if (pid != 0){
+		exit(0);
+	}
+
+	if (chdir("/") < 0){
+		perror("Can't chdir to \n");
+		return -1;
+	}
+
+	if (rl.rlim_max == RLIM_INFINITY)
+		rl.rlim_max = 1024;
+
+	for (i = 0; i < rl.rlim_max; i++)
+		close(i);
+
+	fd0 = open("/dev/null", O_RDWR);
+	fd1 = dup(0);
+	fd2 = dup(0);
+
+	if (fd0 != 0 || fd1 != 1 || fd2 != 2){
+		perror("Unexpected file descriptors\n");
+		return -1;
+	}
+	return 0;
+
+}
 
 int main(int argc, char **argv)
 {
 	int sock;
 	int cli;
 	struct sockaddr_in self;
-	struct sockaddr cli_addr;
  	char buf[2][32];
-	if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0){
+
+	if (prepare_for_daemon() < 0)
+		return 0;
+
+	if (already_running())
+		return 0;
+	
+
+	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0){
 		printf("Can't create a socket\n");
 		return 0;
 	}
@@ -291,28 +344,38 @@ int main(int argc, char **argv)
 	bzero(&self, sizeof(self));
 	self.sin_family = AF_INET;
 	self.sin_port = htons(502); 
-	self.sin_addr.s_addr = inet_addr("127.0.0.1");
+	self.sin_addr.s_addr = htonl(INADDR_ANY); //inet_addr("127.0.0.1");
 
 	if (bind(sock, (struct sockaddr*)&self, sizeof(self)) != 0 ){
-		printf("Can't bind \n");
+		printf("Can't bind %s\n", strerror(errno));
 		close(sock);
 		return 0;
 	}
 
+		pr();
 	if (listen(sock, 5) < 0){
 		printf("listen failed\n");
 		close(sock);
 		return 0;
 	}
-int len;
+		pr();
+	int len;
 	while(1){
-		cli = accept(sock, &cli_addr, NULL);
-		if (cli < 0)
+		pr();
+		cli = accept(sock, NULL, NULL);
+		if (cli < 0){
+		pr();
 			break;
+		}
+		pr();
 		len = recv(cli, buf[0], 32, 0);
+		pr();
 		main_2(argc, argv, buf[1]);
-		memcpy(&buf[1][6], &buf[0][6], 6);
+		pr();
+		memcpy(&buf[1][0], &buf[0][0], 6);
+		pr();
 		send(cli, buf[1], len, 0);
+		pr();
 		close(cli);
 	}
 	close(sock);
