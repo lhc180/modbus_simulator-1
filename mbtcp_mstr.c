@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <unistd.h>
 
 #include "mbus.h"
 #define pr() //printf("%s %s %d\n", __FILE__, __func__, __LINE__)
@@ -118,7 +119,7 @@ void set_data(struct send_info *info, char *buf, int len)
 	info->len = len + 6;
 }
 
-int send_date(struct send_info *info, char *rbuf, int len)
+int send_date(struct send_info *info, unsigned char *rbuf, int len)
 {
 	int ret;
 	int wlen;
@@ -170,11 +171,11 @@ int send_date(struct send_info *info, char *rbuf, int len)
 
 int main_2(int argc, char **argv)
 {
-	char rbuf[32];
+	unsigned char rbuf[32];
 	struct send_info *info;
 	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
 	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
-	int tem;
+	unsigned int tem;
 	int len;
 	
 	if ((info = create_connect(argv[1], argv[2])) == NULL){
@@ -184,7 +185,6 @@ int main_2(int argc, char **argv)
 	
 
 	set_data(info, sbuf, sizeof(sbuf));
-
 	len = send_date(info, rbuf, 32);
        	if (len < 0){
 		printf("send error\n");
@@ -203,14 +203,14 @@ int main_2(int argc, char **argv)
 		return 0;
 	}
 	del_connect(info);
-	printf("%d", tem);
+	printf("%d\n", tem);
 	return 0;
 	
 }
 
 int main_1(int argc, char **argv)
 {
-	char rbuf[32];
+	unsigned char rbuf[32];
 	struct send_info *info;
 	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
 	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x01};
