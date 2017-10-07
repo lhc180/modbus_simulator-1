@@ -167,6 +167,47 @@ int send_date(struct send_info *info, unsigned char *rbuf, int len)
 	return ret == -1 ? -1 : rlen;
 }	
 
+int main_3(int argc, char **argv)
+{
+	unsigned char rbuf[32];
+	struct send_info *info;
+	char obuf[] = {0xf1, 0x01, 0x04, 0x09,0x06, 0xfe};
+	char sbuf[] = {0x01, 0x03, 0x00, 0x00,0x00, 0x02};
+	unsigned int tem;
+	int len;
+	
+	if ((info = create_connect(argv[1], argv[2])) == NULL){
+		printf("Can't create a connect to %s:%s\n", argv[1], argv[2]);
+		return 0;
+	}
+	
+
+	set_data(info, sbuf, sizeof(sbuf));
+	len = send_date(info, rbuf, 32);
+       	if (len < 0){
+		printf("send error\n");
+		return 0;
+	}
+
+	tem = (rbuf[9] << 8) + rbuf[10];	
+	if (tem == 0)
+		tem = (rbuf[11] << 8) + rbuf[12];	
+
+	obuf[2] = (tem % 1000) / 100;
+	obuf[3] = ((tem % 100) / 10) | 0x80;
+	obuf[4] = (tem % 10);
+
+	set_data(info, obuf, sizeof(obuf));
+	len = send_date(info, rbuf, 32);
+       	if (len < 0){
+		printf("send error\n");
+		return 0;
+	}
+	del_connect(info);
+	printf("%d", tem);
+	return 0;
+	
+}
 
 
 int main_2(int argc, char **argv)
