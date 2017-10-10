@@ -319,6 +319,6 @@ int main_1(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
-	main_2(argc, argv);
+	main_3(argc, argv);
 	return 0;
 }
